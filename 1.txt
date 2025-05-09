@@ -1,0 +1,39 @@
+(async () => {
+  const patterns = [
+    /apiKey\s*[:=]\s*["']([^"']+)["']/gi,
+    /token\s*[:=]\s*["']([^"']+)["']/gi,
+    /secret\s*[:=]\s*["']([^"']+)["']/gi,
+  ];
+
+  const scripts = performance.getEntriesByType('resource')
+    .filter(r => r.initiatorType === 'script')
+    .map(r => r.name);
+
+  const findings = [];
+
+  for (const url of scripts) {
+    let text;
+    try { text = await fetch(url).then(r => r.text()); }
+    catch { continue; }
+
+    for (const re of patterns) {
+      re.lastIndex = 0;
+      let m;
+      while ((m = re.exec(text)) !== null) {
+        findings.push({
+          file: url,
+          pattern:  re.source,
+          value:    m[1] || m[0],
+          position: m.index
+        });
+      }
+    }
+  }
+
+  // show in a nice table:
+  console.table(findings);
+
+  // copy to clipboard in JSON form for easy pasting:
+  copy(findings);
+  console.info('🔐 Sensitive findings copied to clipboard');
+})();
