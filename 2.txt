@@ -1,0 +1,62 @@
+(async () => {
+  // 1) Define your sensitive-data patterns (with a capture group for the secret value)
+  const patterns = [
+    /apiKey\s*[:=]\s*["']([^"']+)["']/gi,
+    /token\s*[:=]\s*["']([^"']+)["']/gi,
+    /secret\s*[:=]\s*["']([^"']+)["']/gi,
+    /password\s*[:=]\s*["']([^"']+)["']/gi,
+  ];
+
+  // 2) Collect all <script> resource URLs via the Performance API
+  const scripts = performance
+    .getEntriesByType('resource')
+    .filter(r => r.initiatorType === 'script')
+    .map(r => r.name);
+
+  const findings = [];
+
+  // 3) Fetch each script and test against every pattern
+  for (const url of scripts) {
+    let text;
+    try {
+      text = await fetch(url).then(r => r.text());
+    } catch {
+      // skip any scripts we can’t fetch (CORS, network errors)
+      continue;
+    }
+
+    for (const re of patterns) {
+      re.lastIndex = 0;
+      let m;
+      while ((m = re.exec(text)) !== null) {
+        findings.push({
+          file:     url,
+          pattern:  re.source,
+          value:    m[1] || m[0],
+          position: m.index
+        });
+      }
+    }
+  }
+
+  // 4) Display results in a nice table
+  if (findings.length) {
+    console.table(findings);
+  } else {
+    console.info('🔍 No sensitive patterns found.');
+    return;
+  }
+
+  // 5) Try to copy the JSON to clipboard, with prompt fallback
+  const json = JSON.stringify(findings, null, 2);
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(json)
+      .then(() => console.info('🔐 Findings copied to clipboard!'))
+      .catch(err => {
+        console.error('❌ Clipboard write failed:', err);
+        window.prompt('Copy the JSON below:', json);
+      });
+  } else {
+    window.prompt('Clipboard API not supported — copy the JSON below:', json);
+  }
+})();
